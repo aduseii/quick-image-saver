@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Quick Image Saver</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img class="logo" src="../icons/icon48.png" alt="" width="30" height="30">
+    <div>
+      <h1>Quick Image Saver</h1>
+      <p class="sub">Full-size images &amp; Instagram videos</p>
+    </div>
+  </header>
+
+  <button id="saveAll" class="primary" type="button" disabled>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span id="saveAllLabel">Looking for images…</span>
+  </button>
+  <div class="bar" id="bar" hidden><div id="barFill"></div></div>
+
+  <section>
+    <h2>Ways to save</h2>
+    <label class="row">
+      <span class="text">
+        <span class="name">Save button on hover</span>
+        <span class="hint">Click the ↓ in the corner of an image or video</span>
+      </span>
+      <input type="checkbox" class="switch" id="hoverButton">
+    </label>
+    <label class="row">
+      <span class="text">
+        <span class="name"><kbd>Alt</kbd> + click</span>
+        <span class="hint">Saves the image or video you click</span>
+      </span>
+      <input type="checkbox" class="switch" id="altClick">
+    </label>
+    <div class="row">
+      <span class="text">
+        <span class="name" id="shortcut"><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd></span>
+        <span class="hint">Saves what's under your mouse</span>
+      </span>
+      <button type="button" class="link" id="changeShortcut">Change</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Save to</h2>
+    <div class="folder">
+      <span class="root">Downloads /</span>
+      <input type="text" id="folder" spellcheck="false" placeholder="(Downloads folder)" maxlength="120">
+    </div>
+    <label class="row">
+      <span class="text">
+        <span class="name">A folder for each website</span>
+        <span class="hint" id="perSiteHint">e.g. Saved Images / example.com</span>
+      </span>
+      <input type="checkbox" class="switch" id="perSite">
+    </label>
+  </section>
+
+  <section>
+    <h2>Updates</h2>
+    <label class="row">
+      <span class="text">
+        <span class="name">Update automatically</span>
+        <span class="hint" id="updateStatus">Version <span id="version"></span></span>
+      </span>
+      <input type="checkbox" class="switch" id="autoUpdate">
+    </label>
+    <div class="update-actions">
+      <button type="button" class="link" id="checkNow">Check for updates</button>
+      <a class="link" id="setupLink" href="https://github.com/aduseii/quick-image-saver#turn-on-auto-update" target="_blank" rel="noopener" hidden>How to turn it on</a>
+    </div>
+  </section>
+
+  <footer id="count"></footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,139 @@
+:root {
+  --bg: #ffffff;
+  --panel: #f5f4f2;
+  --text: #17171a;
+  --muted: #6b6b73;
+  --line: #e7e5e2;
+  --accent: #f2481f;
+  --accent-press: #d63b15;
+  --switch-off: #cfcdc9;
+  --focus: rgba(242, 72, 31, .35);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1b1e;
+    --panel: #252528;
+    --text: #f2f2f3;
+    --muted: #9b9ba3;
+    --line: #313135;
+    --switch-off: #4a4a50;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  width: 320px;
+  padding: 16px;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.4 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+}
+
+header { display: flex; align-items: center; gap: 11px; margin-bottom: 14px; }
+.logo { border-radius: 8px; }
+h1 { font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -.1px; }
+.sub { margin: 1px 0 0; color: var(--muted); font-size: 12px; }
+
+.primary {
+  width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 11px 12px;
+  border: 0; border-radius: 10px;
+  background: var(--accent); color: #fff;
+  font: inherit; font-weight: 600; font-size: 13.5px;
+  cursor: pointer;
+  transition: background-color .12s ease, opacity .12s ease;
+}
+.primary svg { width: 17px; height: 17px; flex: none; }
+.primary:hover:not(:disabled) { background: var(--accent-press); }
+.primary:disabled { opacity: .55; cursor: default; }
+.primary.done { background: #16a34a; opacity: 1; }
+.primary:focus-visible, .link:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+
+.bar { height: 4px; margin-top: 8px; border-radius: 4px; background: var(--panel); overflow: hidden; }
+.bar > div { height: 100%; width: 0; background: var(--accent); transition: width .15s ease; }
+
+section { margin-top: 16px; }
+h2 {
+  margin: 0 0 6px;
+  font-size: 11px; font-weight: 650; letter-spacing: .6px; text-transform: uppercase;
+  color: var(--muted);
+}
+
+.row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+div.row { cursor: default; }
+section .row:last-child { border-bottom: 0; }
+.text { display: flex; flex-direction: column; min-width: 0; }
+.name { font-weight: 550; }
+.hint { color: var(--muted); font-size: 12px; }
+
+kbd {
+  display: inline-block;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--panel);
+  font: 600 11.5px/18px "Segoe UI", system-ui, sans-serif;
+}
+
+.switch {
+  appearance: none; -webkit-appearance: none;
+  flex: none; position: relative;
+  width: 36px; height: 20px; margin: 0;
+  border-radius: 999px; background: var(--switch-off);
+  cursor: pointer; transition: background-color .15s ease;
+}
+.switch::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25);
+  transition: transform .15s ease;
+}
+.switch:checked { background: var(--accent); }
+.switch:checked::after { transform: translateX(16px); }
+
+.link {
+  flex: none;
+  border: 0; background: none; padding: 2px 0;
+  color: var(--accent); font: inherit; font-weight: 600;
+  cursor: pointer;
+}
+.link:hover { text-decoration: underline; }
+
+.folder {
+  display: flex; align-items: center;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: var(--panel);
+  overflow: hidden;
+  margin-bottom: 2px;
+}
+.folder:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
+.root { padding: 0 2px 0 10px; color: var(--muted); white-space: nowrap; }
+.folder input {
+  flex: 1; min-width: 0;
+  padding: 8px 10px 8px 4px;
+  border: 0; background: transparent; color: var(--text);
+  font: inherit; font-weight: 550;
+  outline: none;
+}
+
+.update-actions { display: flex; gap: 16px; align-items: center; padding: 2px 0 0; }
+a.link { text-decoration: none; }
+a.link:hover { text-decoration: underline; }
+.hint.good { color: #16a34a; }
+.hint.warn { color: var(--accent); }
+.link:disabled { color: var(--muted); cursor: default; text-decoration: none; }
+
+footer {
+  margin-top: 14px; padding-top: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--muted); font-size: 12px; text-align: center;
+}
+footer:empty { display: none; }

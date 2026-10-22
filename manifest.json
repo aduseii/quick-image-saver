@@ -1,0 +1,69 @@
+{
+  "manifest_version": 3,
+  "name": "Quick Image Saver",
+  "version": "1.3.0",
+  "description": "Save images in full quality, and Instagram videos in their sharpest version, with one click or Alt+click. No right-click menus, no Save As dialogs.",
+  "homepage_url": "https://github.com/aduseii/quick-image-saver",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAs5vohkNtziwQkadt2N6XenJoAjgvKWjuJSvZTEEEvKv7GbbDKFK1TwCE5stQyEaM/ZdHezhCh2VRUB3oTwHFw4Wc1T9QumniQzFtoutlv14a0Orn3DWOIn1Fm/6Dgmhue1IgWK4dXoanjfLipL6SAi9aH3t8EOu2GViXM9zEKRxWIrBrafKP29JWl2N3GqltlGbVS7rJJJcz5ipjMOJnRMsQalVPfvBhzX5wpi5uUUJ1jfTJMmvwPQsSgi58ZtFMRHMDNNMsi40Yl+SMScVtahgRF6578xxSy9WYZ8Z8kw3nkv4wR7VFyCLDAXjtQT8MJTdKQBhKE1fqA5+HBpCzuQIDAQAB",
+  "minimum_chrome_version": "111",
+  "permissions": [
+    "downloads",
+    "storage",
+    "scripting",
+    "offscreen",
+    "alarms",
+    "nativeMessaging"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.instagram.com/*"
+      ],
+      "js": [
+        "src/ig-main.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "src/resolve.js",
+        "src/content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "action": {
+    "default_title": "Quick Image Saver",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "commands": {
+    "save-hovered": {
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
+      "description": "Save the image or video under the mouse"
+    }
+  }
+}
