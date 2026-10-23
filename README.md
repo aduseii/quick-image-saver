@@ -1,6 +1,6 @@
 # Quick Image Saver
 
-Save any image from any website in its **full original quality**, plus **Instagram videos** in their sharpest version, without right-clicking or Save As dialogs. Keeps itself up to date.
+Save any image from any website in its **full original quality**, **GIFs** with their animation intact, and **Instagram videos** in their sharpest version, without right-clicking or Save As dialogs. Keeps itself up to date.
 
 ## Install (Chrome, Edge, Brave)
 
@@ -37,9 +37,9 @@ Version 1.3 gives the extension a fixed ID so the updater can find it, so it's i
 
 | Way | What to do |
 |---|---|
-| **Hover button** | Move your mouse over any image or video, then click the ↓ button in its top-right corner. |
-| **Alt + click** | Hold `Alt` and click any image or video. Works even when it's a link, and won't pause Instagram videos. |
-| **Keyboard** | Point at an image or video and press `Alt + Shift + S`. |
+| **Hover button** | Move your mouse over any image, GIF or video, then click the ↓ button in its top-right corner. |
+| **Alt + click** | Hold `Alt` and click any image, GIF or video. Works even when it's a link, and won't pause Instagram videos. |
+| **Keyboard** | Point at an image, GIF or video and press `Alt + Shift + S`. |
 | **Whole page** | Click the toolbar icon, then **Save all images on this page** (skips icons and tiny images). |
 
 Files go to `Downloads\Saved Images` by default. You can change the folder name in the popup, or turn on **A folder for each website** to sort them automatically.
@@ -56,6 +56,21 @@ How it chooses:
 - among equally sharp copies, the most compatible format wins (H.264, which plays and edits everywhere, including Canva, CapCut and Windows).
 
 If anything goes wrong while getting the sharpest copy, it falls back to the best single-file version, so a save never fails because of this.
+
+## GIFs
+
+A GIF is saved as the GIF itself. Every frame, the timing and the loop stay exactly as they are: the file is copied byte for byte, and it is never flattened into a still picture or recompressed into a JPEG, PNG or WebP.
+
+Pages usually show a smaller or frozen copy. The extension asks for the full GIF first:
+
+- **Giphy** — the original upload, then Giphy's full GIF, instead of a resized, still or 6-frame preview
+- **Tenor** — the full-size GIF, not the tiny or medium one. Some Tenor links are web pages; those are skipped
+- **Imgur** — the `.gif`, including when the page is playing the `.mp4` or `.gifv` copy
+- a `.gif` address that also asks the server for a WebP or JPEG is requested as a GIF, so the server doesn't swap in a still
+
+The "Saved" message says `· original` when that file is the GIF. If the full GIF doesn't exist, the best real GIF the site will serve is saved the same way, still without recompressing it.
+
+Twitter keeps GIFs only as a video file. Saving one keeps that file (an `.mp4`), because turning it into a GIF would throw quality away. A GIF posted on Instagram is saved the same way, as the sharpest video Instagram has.
 
 Instagram streams its videos, so the file address isn't on the page itself. The extension reads it from the data Instagram has already loaded for the post. If the post hasn't loaded that data yet, it asks Instagram for that one post, using your normal login. You need to be logged in to Instagram for this.
 
@@ -84,7 +99,7 @@ Every guess is checked with the website first. If the bigger version doesn't exi
 
 ```
 manifest.json      extension definition
-src/resolve.js     finds the highest-quality URL for an image
+src/resolve.js     finds the highest-quality URL for an image or GIF
 src/content.js     hover button, Alt+click, shortcut, toast messages
 src/ig-main.js     Instagram helper: finds the video file for a post/reel/story
 src/mp4mux.js      joins separate picture + sound streams into one MP4 (lossless)

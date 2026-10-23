@@ -121,8 +121,82 @@ async function bestVideo(msg) {
   };
 }
 
+const MAX_GIF_BYTES = 250 * 1024 * 1024;
+
+// Download the GIF and keep the bytes exactly. Reject anything that is not a GIF
+// file (a still JPEG/WebP, or an HTML page), so a save never silently drops frames.
+async function exactGif(url) {
+  let parsed;
+  try { parsed = new URL(url); } catch (e) { return { ok: false }; }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return { ok: false };
+  let res;
+  try {
+    res = await fetch(parsed.href, {
+      cache: 'no-store',
+      credentials: 'include',
+      redirect: 'follow',
+      headers: { Accept: 'image/gif' }
+    });
+  } catch (e) {
+    return { ok: false, network: true };
+  }
+  if (!res.ok) return { ok: false, status: res.status };
+  const type = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  if (/^(text\/|application\/(json|xml|xhtml)|video\/|image\/(jpeg|png|webp|avif|svg))/.test(type)) {
+    try { res.body && res.body.cancel(); } catch (e) { /* ignore */ }
+    return { ok: false };
+  }
+  const len = +res.headers.get('content-length') || 0;
+  if (len > MAX_GIF_BYTES) {
+    try { res.body && res.body.cancel(); } catch (e) { /* ignore */ }
+    const maybe = type === 'image/gif' || type === 'application/octet-stream' || type === '';
+    return maybe ? { ok: false, tooBig: true } : { ok: false };
+  }
+  if (!res.body || !res.body.getReader) return { ok: false, network: true };
+  const reader = res.body.getReader();
+  const chunks = [];
+  let total = 0;
+  let head = new Uint8Array(0);
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (head.length < 6) {
+        const take = value.subarray(0, 6 - head.length);
+        const next = new Uint8Array(head.length + take.length);
+        next.set(head, 0);
+        next.set(take, head.length);
+        head = next;
+      }
+      total += value.length;
+      if (total > MAX_GIF_BYTES) {
+        try { await reader.cancel(); } catch (e) { /* ignore */ }
+        return QIS.isGifBytes(head) ? { ok: false, tooBig: true } : { ok: false };
+      }
+      chunks.push(value);
+    }
+  } catch (e) {
+    return { ok: false, network: true };
+  }
+  const buf = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    buf.set(chunk, offset);
+    offset += chunk.length;
+  }
+  if (!QIS.isGifBytes(buf)) return { ok: false };
+  const blob = new Blob([buf], { type: 'image/gif' });
+  const blobUrl = URL.createObjectURL(blob);
+  setTimeout(() => URL.revokeObjectURL(blobUrl), BLOB_LIFETIME);
+  return { ok: true, url: blobUrl, size: blob.size };
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || msg.target !== 'qis-offscreen') return false;
+  if (msg.type === 'exact-gif') {
+    exactGif(msg.url).then(sendResponse, () => sendResponse({ ok: false, network: true }));
+    return true;
+  }
   if (msg.type === 'best-video') {
     bestVideo(msg).then(sendResponse, (e) => sendResponse({ use: 'progressive', why: String((e && e.message) || e) }));
     return true;

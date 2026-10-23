@@ -87,6 +87,154 @@
     'imheight', 'scale', 'sz', 'thumbnail', 'thumb', 'compress', 'ssl'
   ];
 
+  // Tenor sticks a size code on the end of the media id (…AAAAC = full GIF).
+  const TENOR_TRANSPARENT = new Set(['Ai', 'Aj', 'Ak', 'Al', 'Am', 'An', 'At', 'Au', 'Av']);
+
+  function isGifUrl(url) {
+    try {
+      const u = new URL(url);
+      if (/\.gif$/i.test(u.pathname)) return true;
+      const fmt = (u.searchParams.get('format') || u.searchParams.get('fm') || '').toLowerCase();
+      return fmt === 'gif';
+    } catch (e) { return false; }
+  }
+
+  // True only for the raw GIF file bytes (GIF87a / GIF89a). A JPEG, WebP or HTML page is not.
+  function isGifBytes(buf) {
+    if (!buf || buf.length < 6) return false;
+    return buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38 &&
+      (buf[4] === 0x37 || buf[4] === 0x39) && buf[5] === 0x61;
+  }
+
+  function giphyId(u) {
+    const host = u.hostname.toLowerCase();
+    if (!/^(i|media\d*)\.giphy\.com$/.test(host)) return '';
+    const parts = u.pathname.split('/').filter(Boolean);
+    const at = parts.lastIndexOf('media');
+    if (at !== -1) {
+      let i = at + 1;
+      if (parts[i] && /^v1\./.test(parts[i])) i++;
+      const id = parts[i];
+      if (id && parts[i + 1] && /^[A-Za-z0-9]+$/.test(id)) return id;
+    }
+    if (parts.length === 1) {
+      const m = parts[0].match(/^([A-Za-z0-9]{5,})\.(?:gif|webp|mp4|jpe?g|png)$/i);
+      if (m) return m[1];
+    }
+    return '';
+  }
+
+  function tenorOriginals(u) {
+    const host = u.hostname.toLowerCase();
+    if (!/^(c|media\d*)\.tenor\.com$/.test(host)) return [];
+    const parts = u.pathname.split('/').filter(Boolean);
+    if (parts[0] === 'images' && parts[1] && /^[A-Za-z0-9]+$/.test(parts[1])) {
+      return [`https://media.tenor.com/images/${parts[1]}/tenor.gif`];
+    }
+    let id = '';
+    if (parts[0] === 'm' && parts[1]) id = parts[1];
+    else if (parts.length >= 2) id = parts[0];
+    if (!id || !/^[A-Za-z0-9_-]+$/.test(id)) return [];
+    const coded = id.match(/^(.*)AAA([A-Za-z0-9]{2})$/);
+    let full = id;
+    let alreadyFull = false;
+    if (coded) {
+      const target = TENOR_TRANSPARENT.has(coded[2]) ? 'Ai' : 'AC';
+      alreadyFull = coded[2] === target;
+      full = `${coded[1]}AAA${target}`;
+    }
+    // media1.tenor.com answers with a web page. c.tenor.com and media.tenor.com serve the file.
+    const servesFile = host === 'c.tenor.com' || host === 'media.tenor.com';
+    if (alreadyFull && servesFile && /\.gif$/i.test(u.pathname)) return [];
+    return [
+      `https://c.tenor.com/${full}/tenor.gif`,
+      `https://media.tenor.com/${full}/tenor.gif`
+    ];
+  }
+
+  function imgurGif(u) {
+    if (u.hostname.toLowerCase() !== 'i.imgur.com') return [];
+    const m = u.pathname.match(/^\/([A-Za-z0-9]{5}|[A-Za-z0-9]{7})([sbtmlh])?\.(gifv?|mp4|webm|gif)$/i);
+    if (!m) return [];
+    const ext = m[3].toLowerCase();
+    if (ext === 'gif' && !m[2]) return [];
+    return [`${u.origin}/${m[1]}.gif`];
+  }
+
+  // Full-quality GIF addresses for a URL the page is showing. Best first.
+  // These are guesses: a preview, a still, or an MP4/WebP stand-in often hides the real GIF.
+  function gifOriginals(href) {
+    let u;
+    try { u = new URL(href); } catch (e) { return []; }
+    if (!/^https?:$/.test(u.protocol)) return [];
+    const out = [];
+    const add = (v) => { if (v && v !== href && !out.includes(v)) out.push(v); };
+
+    const gid = giphyId(u);
+    if (gid) {
+      // source.gif is the upload. giphy.gif is the full rendition. Never step down from either.
+      const file = (u.pathname.split('/').pop() || '').toLowerCase();
+      if (file !== 'source.gif') add(`https://media.giphy.com/media/${gid}/source.gif`);
+      if (file !== 'source.gif' && file !== 'giphy.gif') add(`https://media.giphy.com/media/${gid}/giphy.gif`);
+    }
+    for (const t of tenorOriginals(u)) add(t);
+    for (const g of imgurGif(u)) add(g);
+
+    const wrapped = u.pathname.match(/^(.*\.gif)\.(?:webp|avif|jpe?g|png)$/i);
+    if (wrapped) add(u.origin + wrapped[1] + u.search);
+
+    if (/\.gif$/i.test(u.pathname)) {
+      const c = new URL(u.href);
+      let changed = false;
+      for (const k of [...c.searchParams.keys()]) {
+        const low = k.toLowerCase();
+        const dropSize = SIZE_PARAMS.includes(low);
+        const fmt = low === 'format' || low === 'fm' || low === 'f';
+        if (fmt && c.searchParams.get(k) && !/^gif$/i.test(c.searchParams.get(k))) {
+          c.searchParams.delete(k);
+          changed = true;
+        } else if (dropSize) {
+          c.searchParams.delete(k);
+          changed = true;
+        }
+      }
+      if (changed) add(c.href);
+    }
+    return out;
+  }
+
+  // source.gif, tenor.gif and 200w.gif are real files with useless names.
+  const GENERIC_GIF_NAME = /^(source|giphy|tenor|gif|raw|image|preview|thumbnail|thumb|media)$/i;
+  const SIZE_GIF_NAME = /^(?:\d{2,4}w?(?:_[sd])?|giphy-downsized(?:-[a-z]+)?|tinygif|nanogif|mediumgif|preview_gif)$/i;
+
+  function gifFileName(candidates, sourceUrl) {
+    const baseName = (url) => {
+      try {
+        let seg = new URL(url).pathname.split('/').filter(Boolean).pop() || '';
+        try { seg = decodeURIComponent(seg); } catch (e) { /* keep raw */ }
+        seg = seg.replace(/:[a-z]+$/i, '');
+        const m = seg.match(/^(.*)\.[a-z0-9]{2,5}$/i);
+        return m ? m[1] : '';
+      } catch (e) { return ''; }
+    };
+    const nice = (n) => n && !GENERIC_GIF_NAME.test(n) && !SIZE_GIF_NAME.test(n);
+    const list = Array.isArray(candidates) ? candidates : [];
+    for (const pass of [false, true]) {
+      for (const c of list) {
+        if (!c || typeof c.url !== 'string' || !!c.verify !== pass) continue;
+        if (/^(data|blob):/i.test(c.url)) continue;
+        const n = baseName(c.url);
+        if (nice(n)) return n;
+      }
+    }
+    const src = String(sourceUrl || '');
+    const gid = src.match(/\/media\/([A-Za-z0-9]+)\/(?:source|giphy)\.gif/i) || src.match(/i\.giphy\.com\/([A-Za-z0-9]+)\.gif/i);
+    if (gid) return gid[1];
+    const tid = src.match(/tenor\.com\/(?:images\/)?([A-Za-z0-9_-]{6,})\/tenor\.gif/i);
+    if (tid) return tid[1];
+    return '';
+  }
+
   // Known URL patterns that point to a smaller copy, and how to reach the original.
   // Returns guesses, best first.
   function upgrades(href) {
@@ -97,6 +245,9 @@
     const add = (v) => { if (v && v !== href && !out.includes(v)) out.push(v); };
     const host = u.hostname.toLowerCase();
     const path = u.pathname;
+
+    // A GIF the page shrunk, froze, or swapped for WebP/MP4 — ask for the real file first.
+    for (const g of gifOriginals(href)) add(g);
 
     // Original URL embedded inside a proxy/CDN URL (Substack, Cloudflare, Next.js, wsrv...)
     for (const key of ['url', 'src', 'image', 'img', 'source']) {
@@ -117,6 +268,14 @@
 
     // X / Twitter
     if (host === 'pbs.twimg.com') {
+      // A Twitter GIF is stored as a video. The thumbnail is one still frame; the MP4 is the file itself.
+      if (/^\/tweet_video_thumb\//.test(path)) {
+        const id = path.match(/^\/tweet_video_thumb\/([^./]+)/);
+        if (id) {
+          add(`https://video.twimg.com/tweet_video/${id[1]}.mp4`);
+          add(`https://pbs.twimg.com/tweet_video/${id[1]}.mp4`);
+        }
+      }
       if (/^\/(media|card_img|ext_tw_video_thumb|amplify_video_thumb|tweet_video_thumb)\//.test(path)) {
         const c = new URL(u.href);
         const m = c.pathname.match(/^(.*?)\.(jpe?g|png|webp|gif)(?::\w+)?$/i);
@@ -315,7 +474,10 @@
     return href ? expand([{ url: href, verify: false }]) : [];
   }
 
-  const api = { abs, parseSrcset, largestFromSrcset, upgrades, looksLikeImageUrl, sourcesForImg, candidatesForImg, candidatesForUrl, IMAGE_EXT_RE };
+  const api = {
+    abs, parseSrcset, largestFromSrcset, upgrades, looksLikeImageUrl, sourcesForImg,
+    candidatesForImg, candidatesForUrl, gifOriginals, gifFileName, isGifUrl, isGifBytes, IMAGE_EXT_RE
+  };
   root.QIS = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

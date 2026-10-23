@@ -5,6 +5,9 @@
  */
 'use strict';
 
+importScripts('resolve.js');
+const QIS = globalThis.QIS;
+
 const DEFAULTS = { hoverButton: true, altClick: true, folder: 'Saved Images', perSite: false, autoUpdate: true };
 
 // Prefer original JPG/PNG/GIF over CDN-converted formats when the server offers a choice.
@@ -57,16 +60,64 @@ function safePath(url) {
   try { return new URL(url).pathname; } catch (e) { return ''; }
 }
 
+// Copy a GIF exactly. A CDN that is offered JPEG/PNG/WebP will hand back a still
+// (or a recompressed animation); asking for the GIF and checking its file header
+// keeps every frame.
+async function fetchExactGif(url) {
+  saveJobs++;
+  try {
+    await ensureOffscreen();
+    const res = await chrome.runtime.sendMessage({ target: 'qis-offscreen', type: 'exact-gif', url });
+    if (!res || typeof res !== 'object') return { network: true };
+    if (res.ok && res.url) return { exact: true, url: res.url, type: 'image/gif', sourceUrl: url };
+    if (res.tooBig) return { tooBig: true };
+    if (res.network) return { network: true };
+    return null;
+  } catch (e) {
+    return { network: true };
+  } finally {
+    saveJobs--;
+    scheduleOffscreenClose();
+  }
+}
+
 async function choose(candidates) {
   let fallback = null;
+  const seen = new Set();
   for (const c of candidates) {
-    if (!c || typeof c.url !== 'string') continue;
-    if (c.url.startsWith('data:')) return { url: c.url, type: (c.url.match(/^data:([^;,]+)/) || [])[1] || '' };
+    if (!c || typeof c.url !== 'string' || seen.has(c.url)) continue;
+    seen.add(c.url);
+    if (c.url.startsWith('data:')) {
+      return { url: c.url, type: (c.url.match(/^data:([^;,]+)/) || [])[1] || '', sourceUrl: c.url };
+    }
     if (!/^https?:/i.test(c.url)) continue;
+
+    if (QIS.isGifUrl(c.url)) {
+      const got = await fetchExactGif(c.url);
+      if (got && got.exact) return got;
+      if (got && got.tooBig) return { url: c.url, type: 'image/gif', directGif: true, sourceUrl: c.url };
+      // Not a GIF body. Keep looking for the real file; remember the page's own URL last.
+      if (!c.verify && !fallback) {
+        if (got && got.network) fallback = { url: c.url, type: 'image/gif', directGif: true, sourceUrl: c.url };
+        else {
+          const p = await probe(c.url);
+          if (p.networkError) fallback = { url: c.url, type: 'image/gif', directGif: true, sourceUrl: c.url };
+          else if (isMediaResponse(p, c.url)) fallback = { url: c.url, type: p.type, sourceUrl: c.url };
+        }
+      }
+      continue;
+    }
+
     const p = await probe(c.url);
-    if (isMediaResponse(p, c.url)) return { url: c.url, type: p.type };
-    if (!c.verify && !fallback) fallback = { url: c.url, type: '' };
-    if (!c.verify && p.networkError) return { url: c.url, type: '' };
+    if (p.type === 'image/gif') {
+      const got = await fetchExactGif(c.url);
+      if (got && got.exact) return got;
+      if (got && got.tooBig) return { url: c.url, type: 'image/gif', directGif: true, sourceUrl: c.url };
+      if (!(got && got.network)) continue;
+    }
+    if (isMediaResponse(p, c.url)) return { url: c.url, type: p.type, sourceUrl: c.url };
+    if (!c.verify && !fallback) fallback = { url: c.url, type: '', sourceUrl: c.url };
+    if (!c.verify && p.networkError) return { url: c.url, type: '', sourceUrl: c.url };
   }
   return fallback;
 }
@@ -134,7 +185,11 @@ function folderFor(settings, pageUrl) {
 // ---------- downloading ----------
 async function download(url, filename, kind) {
   const opts = { url, conflictAction: 'uniquify', saveAs: false };
-  if (/^https?:/i.test(url) && kind !== 'video') opts.headers = [{ name: 'Accept', value: ACCEPT }];
+  if (/^https?:/i.test(url)) {
+    // image/gif only — listing JPEG or PNG ahead of it makes CDNs return a still frame.
+    if (kind === 'gif' || QIS.isGifUrl(url)) opts.headers = [{ name: 'Accept', value: 'image/gif' }];
+    else if (kind !== 'video') opts.headers = [{ name: 'Accept', value: ACCEPT }];
+  }
   try {
     return await chrome.downloads.download({ ...opts, filename });
   } catch (e) {
@@ -151,17 +206,21 @@ async function bumpCount(n) {
 async function saveOne(candidates, pageUrl, settings, seen, opts) {
   opts = opts || {};
   const kind = opts.kind === 'video' ? 'video' : 'image';
-  const pick = await choose(Array.isArray(candidates) ? candidates : []);
+  const list = Array.isArray(candidates) ? candidates : [];
+  const pick = await choose(list);
   if (!pick) return { ok: false, error: `Could not find a downloadable ${kind} here` };
+  const savedUrl = pick.sourceUrl || pick.url;
   if (seen) {
-    if (seen.has(pick.url)) return { ok: true, duplicate: true };
-    seen.add(pick.url);
+    if (seen.has(savedUrl)) return { ok: true, duplicate: true };
+    seen.add(savedUrl);
   }
-  const hint = typeof opts.name === 'string' ? opts.name : '';
-  const file = buildFilename(pick.url, pick.type, hint, kind);
+  const gifSave = !!(pick.exact || pick.directGif || pick.type === 'image/gif');
+  const hint = (typeof opts.name === 'string' && opts.name) || (gifSave ? QIS.gifFileName(list, savedUrl) : '');
+  const file = buildFilename(savedUrl, pick.type, hint, gifSave ? 'image' : kind);
   const folder = folderFor(settings, pageUrl);
-  await download(pick.url, folder ? `${folder}/${file}` : file, kind);
-  return { ok: true, filename: file, url: pick.url };
+  const id = await download(pick.url, folder ? `${folder}/${file}` : file, gifSave ? 'gif' : kind);
+  if (pick.exact) pendingBlobs.set(id, pick.url);
+  return { ok: true, filename: file, url: savedUrl, quality: gifSave ? 'original' : undefined };
 }
 
 async function getSettings() {
@@ -173,7 +232,7 @@ async function getSettings() {
 // A hidden helper page (offscreen/) picks the best copy and joins the streams.
 const OFFSCREEN_URL = 'offscreen/offscreen.html';
 let creatingOffscreen = null;
-let videoJobs = 0;
+let saveJobs = 0; // video joins and exact GIF copies still in progress
 let closeTimer = 0;
 const pendingBlobs = new Map(); // download id -> blob address to free when done
 
@@ -191,7 +250,7 @@ async function ensureOffscreen() {
     creatingOffscreen = chrome.offscreen.createDocument({
       url: OFFSCREEN_URL,
       reasons: ['BLOBS'],
-      justification: 'Join Instagram video and sound streams into one file'
+      justification: 'Keep original GIF bytes, and join Instagram video and sound into one file'
     }).finally(() => { creatingOffscreen = null; });
   }
   await creatingOffscreen;
@@ -200,7 +259,7 @@ async function ensureOffscreen() {
 function scheduleOffscreenClose() {
   clearTimeout(closeTimer);
   closeTimer = setTimeout(() => {
-    if (videoJobs || pendingBlobs.size) return;
+    if (saveJobs || pendingBlobs.size) return;
     chrome.offscreen.closeDocument().catch(() => {});
   }, 30000);
 }
@@ -220,7 +279,7 @@ async function saveVideo(msg, settings, pageUrl) {
   const v = msg.video;
   let best = null;
   if (v && v.dash) {
-    videoJobs++;
+    saveJobs++;
     try {
       await ensureOffscreen();
       best = await chrome.runtime.sendMessage({
@@ -232,7 +291,7 @@ async function saveVideo(msg, settings, pageUrl) {
     } catch (e) {
       best = null; // anything goes wrong: fall back to the single-file version below
     } finally {
-      videoJobs--;
+      saveJobs--;
       scheduleOffscreenClose();
     }
   }
@@ -370,7 +429,7 @@ async function runUpdateCheck(manual) {
 
     const { autoUpdate } = await chrome.storage.sync.get({ autoUpdate: true });
     if (state.available && autoUpdate) {
-      if (videoJobs || pendingBlobs.size) {
+      if (saveJobs || pendingBlobs.size) {
         chrome.alarms.create('qis-update-retry', { delayInMinutes: 2 }); // don't restart in the middle of a save
       } else {
         const r = await askHelper({ type: 'update', expect: remote.version });

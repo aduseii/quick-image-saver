@@ -201,6 +201,37 @@
 
   const area = (el) => { const r = el.getBoundingClientRect(); return r.width * r.height; };
 
+  function urlLooksLikeGif(url) {
+    if (!url) return false;
+    const s = String(url);
+    if (/^data:image\/gif/i.test(s) || /\.gif([?#\s,]|$)/i.test(s)) return true;
+    if (/giphy\.com\/media\/[A-Za-z0-9]+\/[^/\s"']+\.(webp|mp4)/i.test(s)) return true;
+    if (/i\.giphy\.com\/[A-Za-z0-9]+\.(webp|mp4)/i.test(s)) return true;
+    if (/tenor\.com\/\S+\.(webp|mp4|webm)/i.test(s)) return true;
+    if (/i\.imgur\.com\/[A-Za-z0-9]+\.gifv([?#\s,]|$)/i.test(s)) return true;
+    if (/pbs\.twimg\.com\/tweet_video_thumb\//i.test(s)) return true;
+    return false;
+  }
+
+  function isGifTarget(found) {
+    if (!found) return false;
+    if (found.kind === 'bg') return urlLooksLikeGif(found.url);
+    if (found.kind === 'img') {
+      const el = found.el;
+      const bits = [el.currentSrc, el.src, el.getAttribute('srcset'), el.getAttribute('data-src')];
+      if (bits.some((s) => urlLooksLikeGif(s))) return true;
+      const picture = el.parentElement && el.parentElement.tagName === 'PICTURE' ? el.parentElement : null;
+      if (picture) {
+        for (const source of picture.querySelectorAll('source')) {
+          if (urlLooksLikeGif(source.getAttribute('srcset') || source.getAttribute('src'))) return true;
+        }
+      }
+      return false;
+    }
+    if (found.kind === 'video') return urlLooksLikeGif(directVideoSrc(found.el));
+    return false;
+  }
+
   function findImageAt(x, y) {
     const stack = stackAt(x, y);
     const vid = findVideoIn(stack);
@@ -310,7 +341,15 @@
       throw new Error(res.error || 'Couldn’t find this video’s file');
     }
     if (!direct) throw new Error('This video can’t be saved');
-    return { candidates: [{ url: direct, verify: false }] };
+    // Giphy, Tenor and Imgur often play a GIF as a small MP4. Ask for the GIF first.
+    let originals = [];
+    try { originals = R.gifOriginals(direct) || []; } catch (e) { originals = []; }
+    return {
+      candidates: [
+        ...originals.filter((url) => url && url !== direct).map((url) => ({ url, verify: true })),
+        { url: direct, verify: false }
+      ]
+    };
   }
 
   // ---------- hover button ----------
@@ -341,7 +380,7 @@
     if (!current || current.el !== found.el) {
       current = found;
       if (btn.dataset.state !== 'busy') setState('idle');
-      const label = found.kind === 'video' ? 'Save video' : 'Save full-size image';
+      const label = isGifTarget(found) ? 'Save GIF' : found.kind === 'video' ? 'Save video' : 'Save full-size image';
       btn.title = `${label}  (or Alt + click)`;
       btn.setAttribute('aria-label', label);
     } else {
@@ -466,15 +505,31 @@
     } catch (e) { return null; }
   }
 
+  async function asGifBlob(blob) {
+    if (/^image\/gif/i.test(blob.type)) return blob;
+    try {
+      const head = new Uint8Array(await blob.slice(0, 6).arrayBuffer());
+      if (head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x38 &&
+          (head[4] === 0x37 || head[4] === 0x39) && head[5] === 0x61) {
+        return new Blob([blob], { type: 'image/gif' });
+      }
+    } catch (e) { /* keep the original blob */ }
+    return blob;
+  }
+
   // blob: URLs only exist inside this page, so turn them into data: URLs first.
+  // A GIF drawn onto a canvas is one frame — never do that.
   async function portable(candidates, imgEl) {
+    const keepGif = (imgEl && urlLooksLikeGif(imgEl.currentSrc || imgEl.src)) ||
+      candidates.some((c) => /^data:image\/gif/i.test(c.url) || /\.gif([?#]|$)/i.test(c.url));
     const out = [];
     for (const c of candidates) {
       if (!c.url.startsWith('blob:')) { out.push(c); continue; }
       try {
-        const blob = await (await fetch(c.url)).blob();
+        const blob = await asGifBlob(await (await fetch(c.url)).blob());
         out.push({ url: await readAsDataUrl(blob), verify: false });
       } catch (e) {
+        if (keepGif) continue;
         const d = imgEl && canvasDataUrl(imgEl);
         if (d) out.push({ url: d, verify: false });
       }
@@ -510,6 +565,8 @@
       if (!candidates.length && !(video && video.dash)) throw new Error('No image address found');
       if (video && video.dash) {
         slowTimer = setTimeout(() => toast('Getting the best quality…', false, 'wait'), 900);
+      } else if (isGifTarget(found)) {
+        slowTimer = setTimeout(() => toast('Getting the full GIF…', false, 'wait'), 900);
       }
       const res = await chrome.runtime.sendMessage({
         type: 'save', candidates, pageUrl: location.href, name, video, kind: found.kind === 'video' ? 'video' : 'image'
