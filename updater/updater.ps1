@@ -106,6 +106,7 @@ function Install-Update($expect) {
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
         $zip = Join-Path $tmp 'update.zip'
         Invoke-WebRequest -Uri $ZipUrl -OutFile $zip -UseBasicParsing -TimeoutSec 300
+        Unblock-File -LiteralPath $zip -ErrorAction SilentlyContinue
         $unzipped = Join-Path $tmp 'files'
         Expand-Archive -LiteralPath $zip -DestinationPath $unzipped -Force
         $mf = Get-ChildItem -LiteralPath $unzipped -Filter 'manifest.json' -Recurse -File |

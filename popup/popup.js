@@ -145,7 +145,11 @@ function showUpdate(state, justUpdated) {
   let needsSetup = false;
   state = state || {};
   const available = state.available && state.latest && state.running === running;
-  if (available && !$('autoUpdate').checked) {
+  if (available && state.downloaded) {
+    text = `Downloaded ${state.latest}. Unzip it over the extension folder, then Reload.`;
+    tone = 'warn';
+    needsSetup = state.helper === 'missing';
+  } else if (available && !$('autoUpdate').checked) {
     text = `Version ${state.latest} is out · switch this on to install it`;
     tone = 'warn';
   } else if (available && state.helper === 'missing') {

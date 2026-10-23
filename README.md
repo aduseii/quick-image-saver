@@ -23,7 +23,7 @@ That's it. From then on the extension updates itself:
 - it checks GitHub when your browser starts and every 3 hours;
 - when there's a new version, it downloads it, installs it into the folder and restarts itself (a second or two), with nothing to click;
 - open tabs keep working, and your settings are kept;
-- the popup shows your version under **Updates** (e.g. *Updated to 1.3.1 ✓*), and **Check for updates** checks right away.
+- the popup shows your version under **Updates** (e.g. *Updated to 1.4.1 ✓*), and **Check for updates** checks right away. If the one-time setup below hasn't been done, that button downloads `Quick Image Saver <version>.zip` into your downloads folder instead. Unzip it over the extension folder, then click **Reload** on the extensions page.
 
 Why the one-time step: browsers don't let an extension rewrite its own files, so a tiny helper (`updater\`) does the installing. It needs no admin rights, doesn't run in the background, and only starts when the extension has found a new version. It only ever downloads from this repository, only accepts a download that really is Quick Image Saver at the expected version, and if anything goes wrong it leaves your folder exactly as it was. To turn it off, run `updater\Turn off auto-update.bat` (or switch off **Update automatically** in the popup).
 

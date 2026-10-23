@@ -353,6 +353,8 @@ async function handleSaveMany(msg) {
 // downloads and installs the new version; then the extension restarts itself.
 const UPDATE = {
   manifestUrl: 'https://raw.githubusercontent.com/aduseii/quick-image-saver/main/manifest.json',
+  commitsUrl: 'https://api.github.com/repos/aduseii/quick-image-saver/commits/main',
+  releaseZip: 'https://github.com/aduseii/quick-image-saver/archive/refs/heads/main.zip',
   helper: 'com.aduseii.quick_image_saver',
   alarm: 'qis-update-check',
   everyMinutes: 180
@@ -411,23 +413,72 @@ function checkForUpdate(manual) {
   return updateCheck;
 }
 
+// The plain main URL can stay stale for a few minutes. The commit id never does.
+async function fetchRemoteManifest() {
+  try {
+    const head = await fetch(UPDATE.commitsUrl, {
+      cache: 'no-store',
+      headers: { Accept: 'application/vnd.github+json' }
+    });
+    if (head.ok) {
+      const commit = await head.json();
+      const sha = commit && commit.sha;
+      if (sha && /^[0-9a-f]{40}$/i.test(sha)) {
+        const pinned = UPDATE.manifestUrl.replace('/main/', `/${sha}/`);
+        const res = await fetch(pinned, { cache: 'no-store' });
+        if (res.ok) return res.json();
+      }
+    }
+  } catch (e) { /* fall through to the branch URL */ }
+  const res = await fetch(`${UPDATE.manifestUrl}?t=${Date.now()}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`GitHub answered ${res.status}`);
+  return res.json();
+}
+
+// The silent installer only runs after a one-time setup. Without it, put the
+// new version in the downloads folder so Check for updates still delivers a file.
+async function downloadRelease(version, force) {
+  if (!force) {
+    const { updateZipFor = '' } = await chrome.storage.local.get({ updateZipFor: '' });
+    if (updateZipFor === version) return { ok: true, already: true };
+  }
+  const filename = `Quick Image Saver ${version}.zip`;
+  try {
+    await chrome.downloads.download({
+      url: UPDATE.releaseZip,
+      filename,
+      conflictAction: 'uniquify',
+      saveAs: false
+    });
+    await chrome.storage.local.set({ updateZipFor: version });
+    return { ok: true };
+  } catch (e) {
+    try {
+      await chrome.downloads.download({ url: UPDATE.releaseZip, conflictAction: 'uniquify', saveAs: false });
+      await chrome.storage.local.set({ updateZipFor: version });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: (err && err.message) || (e && e.message) || 'Could not download the update' };
+    }
+  }
+}
+
 async function runUpdateCheck(manual) {
   const running = chrome.runtime.getManifest().version;
   const prev = (await chrome.storage.local.get({ update: {} })).update || {};
-  const state = { running, latest: prev.latest || null, available: false, checkedAt: Date.now(), helper: prev.helper || 'unknown', error: '' };
+  const state = { running, latest: prev.latest || null, available: false, checkedAt: Date.now(), helper: prev.helper || 'unknown', error: '', downloaded: false };
   try {
     // New files already on disk (helper finished, or folder replaced by hand)? Restart into them.
     const disk = await fetch(chrome.runtime.getURL('manifest.json'), { cache: 'no-store' }).then((r) => r.json()).catch(() => null);
     if (disk && isNewer(disk.version, running)) { await restartInto(running, disk.version); return state; }
 
-    const res = await fetch(`${UPDATE.manifestUrl}?t=${Date.now()}`, { cache: 'no-store' });
-    if (!res.ok) throw new Error(`GitHub answered ${res.status}`);
-    const remote = await res.json();
+    const remote = await fetchRemoteManifest();
     if (!remote || remote.name !== 'Quick Image Saver' || !remote.version) throw new Error('Unexpected update file');
     state.latest = remote.version;
     state.available = isNewer(remote.version, running);
 
     const { autoUpdate } = await chrome.storage.sync.get({ autoUpdate: true });
+    let needZip = false;
     if (state.available && autoUpdate) {
       if (saveJobs || pendingBlobs.size) {
         chrome.alarms.create('qis-update-retry', { delayInMinutes: 2 }); // don't restart in the middle of a save
@@ -436,11 +487,19 @@ async function runUpdateCheck(manual) {
         if (r.ok && r.version) { await restartInto(running, r.version); return state; }
         state.helper = r.missing ? 'missing' : 'error';
         state.error = r.missing ? '' : (r.error || 'Update failed');
+        needZip = true;
       }
+    } else if (state.available && manual) {
+      needZip = true;
     } else if (manual) {
       const r = await askHelper({ type: 'ping' });
       state.helper = r.ok ? 'on' : r.missing ? 'missing' : 'error';
       if (!r.ok && !r.missing) state.error = r.error || '';
+    }
+    if (needZip) {
+      const dl = await downloadRelease(remote.version, !!manual);
+      if (dl.ok) state.downloaded = true;
+      else state.error = state.error || dl.error || 'Could not download the update';
     }
   } catch (e) {
     state.error = (e && e.message) || 'Could not check for updates';
