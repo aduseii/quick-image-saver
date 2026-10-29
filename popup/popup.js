@@ -101,12 +101,15 @@ async function loadPage() {
   $('saveAll').disabled = false;
 }
 
+let savingAll = false;
 $('saveAll').addEventListener('click', async () => {
   const button = $('saveAll');
   button.disabled = true;
+  savingAll = true;
   setLabel(`Saving 0 of ${items.length}…`);
   $('bar').hidden = false;
-  const res = await chrome.runtime.sendMessage({ type: 'save-many', items, pageUrl });
+  const res = await chrome.runtime.sendMessage({ type: 'save-many', items, pageUrl }).catch(() => null);
+  savingAll = false; // a late progress message must not overwrite the result
   $('barFill').style.width = '100%';
   if (res && res.ok) {
     $('bar').hidden = true;
@@ -122,7 +125,7 @@ $('saveAll').addEventListener('click', async () => {
 });
 
 chrome.runtime.onMessage.addListener((msg) => {
-  if (msg && msg.type === 'progress' && msg.total) {
+  if (savingAll && msg && msg.type === 'progress' && msg.total) {
     setLabel(`Saving ${msg.done} of ${msg.total}…`);
     $('barFill').style.width = `${Math.round((msg.done / msg.total) * 100)}%`;
   }

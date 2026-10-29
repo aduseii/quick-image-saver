@@ -37,7 +37,7 @@ Version 1.3 gives the extension a fixed ID so the updater can find it, so it's i
 
 | Way | What to do |
 |---|---|
-| **Hover button** | Move your mouse over any image, GIF or video, then click the ↓ button in its top-right corner. |
+| **Hover button** | Move your mouse over any image, GIF or video, then click the ↓ button in its top-left corner. |
 | **Alt + click** | Hold `Alt` and click any image, GIF or video. Works even when it's a link, and won't pause Instagram videos. |
 | **Keyboard** | Point at an image, GIF or video and press `Alt + Shift + S`. |
 | **Whole page** | Click the toolbar icon, then **Save all images on this page** (skips icons and tiny images). |

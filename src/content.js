@@ -365,10 +365,11 @@
     const r = current.el.getBoundingClientRect();
     if (r.width < MIN_SIZE || r.height < MIN_SIZE || r.bottom < 0 || r.top > innerHeight) return hide();
     const pad = 8;
+    // Top-left corner: sites tend to put their own buttons top-right (Pinterest save, Instagram slide count).
     let top = Math.max(r.top, 0) + pad;
-    let left = Math.min(r.right, innerWidth) - BTN - pad;
+    let left = Math.max(r.left, 0) + pad;
     top = Math.min(top, Math.min(r.bottom, innerHeight) - BTN - pad);
-    left = Math.max(left, Math.max(r.left, 0) + pad);
+    left = Math.min(left, Math.min(r.right, innerWidth) - BTN - pad);
     btn.style.top = `${Math.round(top)}px`;
     btn.style.left = `${Math.round(left)}px`;
   }
