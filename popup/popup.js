@@ -219,6 +219,17 @@ $('autoUpdate').addEventListener('change', async (e) => {
   else loadUpdate();
 });
 
+// ---------- second install warning ----------
+async function loadDuplicateNotice() {
+  const { duplicateSeenAt } = await chrome.storage.local.get({ duplicateSeenAt: 0 });
+  $('dupNotice').hidden = !(duplicateSeenAt && Date.now() - duplicateSeenAt < 3 * 24 * 3600 * 1000);
+  $('dupKeep').textContent = chrome.runtime.getManifest().version;
+}
+$('openExtensions').addEventListener('click', () => {
+  chrome.tabs.create({ url: navigator.userAgent.includes('Edg/') ? 'edge://extensions' : 'chrome://extensions' });
+});
+loadDuplicateNotice();
+
 loadSettings().then(loadUpdate);
 loadShortcut();
 loadCount();

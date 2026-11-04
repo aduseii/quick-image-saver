@@ -90,6 +90,7 @@ Every guess is checked with the website first. If the bigger version doesn't exi
 ## Tips
 
 - **Change the keyboard shortcut:** popup → **Change**, or go to `chrome://extensions/shortcuts`.
+- **Two save buttons, or pictures saved twice?** Two copies of the extension are installed (one from before version 1.3). The popup says so; remove the one that isn't the current version in `chrome://extensions`. After an update, pages that were already open show just one button too; refresh them once if Alt + click does nothing there.
 - **A Save As window opens every time?** Turn off *Ask where to save each file before downloading* in your browser's Downloads settings.
 - **Some images can't be saved?** A few sites protect their image files. The extension will save the best version the site allows.
 - **Instagram says "open the post and try again"?** Click into the post (or reel) so Instagram loads it, then save again.

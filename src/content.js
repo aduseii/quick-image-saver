@@ -21,9 +21,17 @@
   const settings = { hoverButton: true, altClick: true, buttonPosition: 'outside' };
   const cleanups = [];
 
+  // Every listener first checks that this copy still belongs to the running
+  // extension. After an update, pages that were open keep the old copy of this
+  // script; it switches itself off at its first event instead of showing a
+  // second button.
   const on = (target, type, fn, opts) => {
-    target.addEventListener(type, fn, opts);
-    cleanups.push(() => target.removeEventListener(type, fn, opts));
+    const guarded = function (e) {
+      if (!alive()) { shutDown(); return undefined; }
+      return fn.call(this, e);
+    };
+    target.addEventListener(type, guarded, opts);
+    cleanups.push(() => target.removeEventListener(type, guarded, opts));
   };
 
   const alive = () => {
@@ -53,11 +61,20 @@
     save: '<svg class="i i-save" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     busy: '<svg class="i i-busy" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-opacity=".3" stroke-width="2.4"/><path d="M20 12a8 8 0 0 0-8-8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
     done: '<svg class="i i-done" viewBox="0 0 24 24" aria-hidden="true"><path d="m5.5 12.5 4 4 9-9.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    error: '<svg class="i i-error" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>'
+    error: '<svg class="i i-error" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
+    info: '<svg class="i i-info" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 11v7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><circle cx="12" cy="6.5" r="1.7" fill="currentColor"/></svg>'
   };
 
   const host = document.createElement('qis-ui');
   host.style.cssText = 'all:initial!important;position:fixed!important;top:0!important;left:0!important;width:0!important;height:0!important;z-index:2147483647!important;pointer-events:none!important;display:block!important;';
+  let extId = '';
+  let extVersion = '0';
+  try {
+    extId = chrome.runtime.id;
+    extVersion = chrome.runtime.getManifest().version;
+    host.dataset.qisExt = extId;
+    host.dataset.qisVer = extVersion;
+  } catch (e) { /* ignore */ }
   const shadow = host.attachShadow({ mode: 'closed' });
   shadow.innerHTML = `
     <style>
@@ -101,6 +118,9 @@
       .toast.show { opacity: 1; transform: translate(-50%, 0); }
       .dot { flex: none; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: #16a34a; }
       .toast.err .dot { background: #dc2626; }
+      .toast.info .dot { background: #2563eb; }
+      .toast.long { border-radius: 14px; padding-top: 10px; padding-bottom: 10px; }
+      .toast.long .msg { white-space: normal; overflow: visible; }
       .toast.wait .dot { background: transparent; }
       .toast.wait .dot svg { width: 16px; height: 16px; display: block; animation: spin .7s linear infinite; }
       .dot svg { width: 12px; height: 12px; display: block; }
@@ -449,7 +469,7 @@
 
   function update() {
     rafPending = false;
-    if (!settings.hoverButton || mx < 0) return hide(true);
+    if (!settings.hoverButton || standingDown || mx < 0) return hide(true);
     const top = stackAt(mx, my)[0];
     if (top === host || headingToButton(mx, my)) { // on / heading to our button
       clearTimeout(hideTimer);
@@ -472,6 +492,7 @@
     mx = e.clientX; my = e.clientY;
     pointerInside = true;
     if (settings.hoverButton) schedule();
+    if (e.altKey && staleCopySeen && !staleHinted && findImageAt(mx, my)) hintRefresh(); // about to Alt + click
   }, { capture: true, passive: true });
 
   on(document, 'mouseover', () => { pointerInside = true; }, { capture: true, passive: true });
@@ -492,7 +513,7 @@
 
   // ---------- Alt + click ----------
   function altHit(e) {
-    if (!settings.altClick || !e.altKey || e.ctrlKey || e.shiftKey || e.metaKey || e.button !== 0) return null;
+    if (standingDown || !settings.altClick || !e.altKey || e.ctrlKey || e.shiftKey || e.metaKey || e.button !== 0) return null;
     if (e.target === host) return null;
     return findImageAt(e.clientX, e.clientY);
   }
@@ -517,16 +538,21 @@
   }
 
   let toastTimer = 0;
+  // mode: 'wait' (spinner), 'info' (a notice, not a result) or 'long' (a notice worth reading; wraps)
   function toast(html, isError, mode) {
     mount();
     const waiting = mode === 'wait';
-    toastDot.innerHTML = isError ? ICONS.error : waiting ? ICONS.busy : ICONS.done;
+    const info = mode === 'info';
+    const long = mode === 'long' || info;
+    toastDot.innerHTML = isError ? ICONS.error : waiting ? ICONS.busy : info ? ICONS.info : ICONS.done;
     toastMsg.innerHTML = html;
     toastEl.classList.toggle('err', !!isError);
     toastEl.classList.toggle('wait', waiting);
+    toastEl.classList.toggle('info', info);
+    toastEl.classList.toggle('long', long);
     toastEl.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toastEl.classList.remove('show'), waiting ? 60000 : isError ? 3200 : 2400);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), waiting ? 60000 : long ? 8000 : isError ? 3200 : 2400);
   }
 
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -676,12 +702,96 @@
     cleanups.push(() => { try { chrome.runtime.onMessage.removeListener(onMessage); } catch (e) { /* ignore */ } });
   } catch (e) { /* ignore */ }
 
-  window.__qis = {
-    destroy() {
-      cleanups.splice(0).forEach((fn) => fn());
-      clearTimeout(hideTimer);
-      clearTimeout(toastTimer);
-      host.remove();
+  // ---------- only one button per page ----------
+  // Pages that were open while the extension updated still run the old copy of
+  // this script, in a separate space this copy can't reach - only the page is
+  // shared. So the current copy hides every other copy's button. Copies from
+  // 1.4.4 on also switch themselves off (see on() above and the takeover event).
+  let instanceStart = 0; // when the running extension started (set by the background)
+  try {
+    chrome.storage.local.get({ instanceStart: 0 }).then((s) => { instanceStart = s.instanceStart || 0; }).catch(() => {});
+  } catch (e) { /* ignore */ }
+
+  // A page opened after the extension started can't hold an outdated copy of
+  // it, so a second button there comes from a second, older install.
+  const isDuplicateInstall = (el) =>
+    (el.dataset.qisExt && el.dataset.qisExt !== extId) ||
+    (instanceStart > 0 && performance.timeOrigin > instanceStart);
+
+  let dupWarned = false;
+  function warnDuplicate() {
+    if (dupWarned) return;
+    dupWarned = true;
+    try {
+      chrome.storage.local.get({ dupWarnedAt: 0 }).then((s) => {
+        chrome.storage.local.set({ duplicateSeenAt: Date.now() });
+        if (Date.now() - s.dupWarnedAt < 24 * 3600 * 1000) return;
+        chrome.storage.local.set({ dupWarnedAt: Date.now() });
+        toast('Two copies of Quick Image Saver are installed. Remove the older one in <b>chrome://extensions</b>.', true, 'long');
+      }).catch(() => {});
+    } catch (e) { /* ignore */ }
+  }
+
+  function newerThanMe(el) {
+    const a = String(el.dataset.qisVer || '0').split('.').map((n) => parseInt(n, 10) || 0);
+    const b = String(extVersion).split('.').map((n) => parseInt(n, 10) || 0);
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
     }
-  };
+    return String(el.dataset.qisExt) < extId; // same version: a stable tie-break
+  }
+
+  let standingDown = false;
+  function silence(el) {
+    if (el === host || el.dataset.qisSilenced) return;
+    if (isDuplicateInstall(el)) warnDuplicate();
+    if (el.dataset.qisExt && el.dataset.qisExt !== extId) {
+      // Another install that also has this logic: the newer one keeps its button.
+      if (newerThanMe(el)) { standingDown = true; hide(true); }
+      return;
+    }
+    el.dataset.qisSilenced = '1';
+    el.style.setProperty('display', 'none', 'important');
+    if (!isDuplicateInstall(el)) staleCopySeen = true;
+  }
+
+  // Copies from before 1.4.4 can't switch themselves off and still catch
+  // Alt + click in this page; say so once instead of silently doing nothing.
+  let staleCopySeen = false;
+  let staleHinted = false;
+  function hintRefresh() {
+    if (!staleCopySeen || staleHinted || !settings.altClick) return;
+    staleHinted = true;
+    toast('Quick Image Saver just updated. <b>Refresh this page</b> so Alt + click works here again.', false, 'info');
+  }
+
+  function sweep() {
+    document.querySelectorAll('qis-ui').forEach(silence);
+  }
+
+  const watcher = new MutationObserver((records) => {
+    if (!alive()) { shutDown(); return; }
+    for (const r of records) {
+      for (const n of r.addedNodes) if (n.nodeName === 'QIS-UI') silence(n);
+    }
+  });
+  try { watcher.observe(document.documentElement, { childList: true }); } catch (e) { /* ignore */ }
+  cleanups.push(() => watcher.disconnect());
+  // Copies from 1.4.4 on hear this and remove themselves right away (on()'s check)...
+  try { document.dispatchEvent(new CustomEvent('qis:takeover')); } catch (e) { /* ignore */ }
+  on(document, 'qis:takeover', () => {});
+  // ...so whatever is still here is older and gets hidden.
+  sweep();
+
+  function shutDown() {
+    if (shutDown.done) return;
+    shutDown.done = true;
+    cleanups.splice(0).forEach((fn) => { try { fn(); } catch (e) { /* ignore */ } });
+    clearTimeout(hideTimer);
+    clearTimeout(toastTimer);
+    host.remove();
+    if (window.__qis && window.__qis.destroy === shutDown) window.__qis = null;
+  }
+
+  window.__qis = { destroy: shutDown, version: extVersion };
 })();

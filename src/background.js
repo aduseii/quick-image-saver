@@ -512,7 +512,10 @@ async function runUpdateCheck(manual) {
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === UPDATE.alarm || a.name === 'qis-update-retry') checkForUpdate(false);
 });
-chrome.runtime.onStartup.addListener(() => ensureUpdateAlarm(1));
+chrome.runtime.onStartup.addListener(() => {
+  chrome.storage.local.set({ instanceStart: Date.now() }); // pages newer than this can't hold an outdated copy
+  ensureUpdateAlarm(1);
+});
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg !== 'object') return false;
@@ -540,6 +543,7 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
 
 // ---------- install: defaults + start working in already-open tabs ----------
 chrome.runtime.onInstalled.addListener(async () => {
+  await chrome.storage.local.set({ instanceStart: Date.now() });
   const current = await chrome.storage.sync.get(DEFAULTS);
   await chrome.storage.sync.set(current);
   chrome.alarms.clear(UPDATE.alarm).finally(() => ensureUpdateAlarm(1));
