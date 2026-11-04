@@ -1,6 +1,6 @@
 'use strict';
 
-const DEFAULTS = { hoverButton: true, altClick: true, folder: 'Saved Images', perSite: false, autoUpdate: true };
+const DEFAULTS = { hoverButton: true, altClick: true, buttonPosition: 'outside', folder: 'Saved Images', perSite: false, autoUpdate: true };
 const $ = (id) => document.getElementById(id);
 
 let items = [];
@@ -14,15 +14,29 @@ async function loadSettings() {
   $('altClick').checked = !!s.altClick;
   $('perSite').checked = !!s.perSite;
   $('autoUpdate').checked = !!s.autoUpdate;
+  $('buttonPosition').value = s.buttonPosition || 'outside';
+  if (!$('buttonPosition').value) $('buttonPosition').value = 'outside';
   $('folder').value = s.folder || '';
   updatePerSiteHint();
+  updatePositionRow();
 }
 
 for (const id of ['hoverButton', 'altClick', 'perSite']) {
   $(id).addEventListener('change', (e) => {
     chrome.storage.sync.set({ [id]: e.target.checked });
     if (id === 'perSite') updatePerSiteHint();
+    if (id === 'hoverButton') updatePositionRow();
   });
+}
+
+$('buttonPosition').addEventListener('change', (e) => {
+  chrome.storage.sync.set({ buttonPosition: e.target.value });
+});
+
+function updatePositionRow() {
+  const on = $('hoverButton').checked;
+  $('positionRow').classList.toggle('off', !on);
+  $('buttonPosition').disabled = !on;
 }
 
 let folderTimer = 0;

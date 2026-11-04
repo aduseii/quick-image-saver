@@ -15,7 +15,10 @@
   const R = globalThis.QIS;
   const MIN_SIZE = 64;
   const BTN = 32;
-  const settings = { hoverButton: true, altClick: true };
+  const GAP = 6; // space between the picture and the button when it sits outside the picture
+  const EDGE = 4; // keep the button at least this far from the window edge
+  const POSITIONS = ['outside', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
+  const settings = { hoverButton: true, altClick: true, buttonPosition: 'outside' };
   const cleanups = [];
 
   const on = (target, type, fn, opts) => {
@@ -29,16 +32,17 @@
 
   // ---------- settings ----------
   try {
-    chrome.storage.sync.get({ hoverButton: true, altClick: true }).then((s) => {
+    chrome.storage.sync.get({ hoverButton: true, altClick: true, buttonPosition: 'outside' }).then((s) => {
       Object.assign(settings, s);
       if (!settings.hoverButton) hide(true);
     }).catch(() => {});
     const onStore = (changes, area) => {
       if (area !== 'sync') return;
-      for (const k of ['hoverButton', 'altClick']) {
+      for (const k of ['hoverButton', 'altClick', 'buttonPosition']) {
         if (changes[k]) settings[k] = changes[k].newValue;
       }
       if (!settings.hoverButton) hide(true);
+      else if (changes.buttonPosition && current) place();
     };
     chrome.storage.onChanged.addListener(onStore);
     cleanups.push(() => { try { chrome.storage.onChanged.removeListener(onStore); } catch (e) { /* ignore */ } });
@@ -360,18 +364,54 @@
   let hideTimer = 0;
   let stateTimer = 0;
 
+  let placedOutside = false;
+
+  // A corner inside the visible part of the picture ("top-left", "bottom-right", ...).
+  function insideCorner(r, corner) {
+    const pad = 8;
+    const visTop = Math.max(r.top, 0), visBottom = Math.min(r.bottom, innerHeight);
+    const visLeft = Math.max(r.left, 0), visRight = Math.min(r.right, innerWidth);
+    const atTop = corner.startsWith('top'), atLeft = corner.endsWith('left');
+    let top = atTop ? visTop + pad : visBottom - BTN - pad;
+    let left = atLeft ? visLeft + pad : visRight - BTN - pad;
+    top = atTop ? Math.min(top, visBottom - BTN - pad) : Math.max(top, visTop + pad);
+    left = atLeft ? Math.min(left, visRight - BTN - pad) : Math.max(left, visLeft + pad);
+    return { top, left, outside: false };
+  }
+
+  // Default: just outside the picture so it never covers it. Above the top-right
+  // corner if there's room, else beside the picture, else (picture fills the
+  // window) inside its top-right corner.
+  function outsideSpot(r) {
+    const above = r.top - GAP - BTN;
+    if (above >= EDGE) {
+      const left = Math.min(Math.max(r.right - BTN, EDGE), innerWidth - BTN - EDGE);
+      return { top: above, left, outside: true };
+    }
+    const top = Math.min(Math.max(r.top, EDGE), Math.min(r.bottom, innerHeight) - BTN);
+    if (r.right + GAP + BTN <= innerWidth - EDGE) return { top, left: r.right + GAP, outside: true };
+    if (r.left - GAP - BTN >= EDGE) return { top, left: r.left - GAP - BTN, outside: true };
+    return insideCorner(r, 'top-right');
+  }
+
   function place() {
     if (!current || !current.el.isConnected) return hide();
     const r = current.el.getBoundingClientRect();
     if (r.width < MIN_SIZE || r.height < MIN_SIZE || r.bottom < 0 || r.top > innerHeight) return hide();
-    const pad = 8;
-    // Top-left corner: sites tend to put their own buttons top-right (Pinterest save, Instagram slide count).
-    let top = Math.max(r.top, 0) + pad;
-    let left = Math.max(r.left, 0) + pad;
-    top = Math.min(top, Math.min(r.bottom, innerHeight) - BTN - pad);
-    left = Math.min(left, Math.min(r.right, innerWidth) - BTN - pad);
-    btn.style.top = `${Math.round(top)}px`;
-    btn.style.left = `${Math.round(left)}px`;
+    const pos = POSITIONS.includes(settings.buttonPosition) ? settings.buttonPosition : 'outside';
+    const spot = pos === 'outside' ? outsideSpot(r) : insideCorner(r, pos);
+    placedOutside = spot.outside;
+    btn.style.top = `${Math.round(spot.top)}px`;
+    btn.style.left = `${Math.round(spot.left)}px`;
+  }
+
+  // While the pointer travels from the picture to a button sitting outside it,
+  // it may cross the page or a neighbouring picture: keep the button where it is.
+  function headingToButton(x, y) {
+    if (!placedOutside || !current || !btn.classList.contains('show')) return false;
+    const b = btn.getBoundingClientRect();
+    const m = GAP + 6;
+    return x >= b.left - m && x <= b.right + m && y >= b.top - m && y <= b.bottom + m;
   }
 
   function show(found) {
@@ -411,7 +451,12 @@
     rafPending = false;
     if (!settings.hoverButton || mx < 0) return hide(true);
     const top = stackAt(mx, my)[0];
-    if (top === host) { clearTimeout(hideTimer); hideTimer = 0; return; } // pointer is on our button
+    if (top === host || headingToButton(mx, my)) { // on / heading to our button
+      clearTimeout(hideTimer);
+      hideTimer = 0;
+      if (current) place(); // follow the picture if the page scrolls
+      return;
+    }
     const found = findImageAt(mx, my);
     if (found) show(found);
     else hide();

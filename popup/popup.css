@@ -124,6 +124,23 @@ kbd {
   outline: none;
 }
 
+select {
+  flex: none;
+  max-width: 200px;
+  padding: 6px 26px 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5' fill='none' stroke='%236b6b73' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 8px center / 12px;
+  color: var(--text);
+  font: inherit;
+  font-weight: 550;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+select:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+#positionRow.off { opacity: .45; }
+
 .update-actions { display: flex; gap: 16px; align-items: center; padding: 2px 0 0; }
 a.link { text-decoration: none; }
 a.link:hover { text-decoration: underline; }

@@ -8,7 +8,7 @@
 importScripts('resolve.js');
 const QIS = globalThis.QIS;
 
-const DEFAULTS = { hoverButton: true, altClick: true, folder: 'Saved Images', perSite: false, autoUpdate: true };
+const DEFAULTS = { hoverButton: true, altClick: true, buttonPosition: 'outside', folder: 'Saved Images', perSite: false, autoUpdate: true };
 
 // Prefer original JPG/PNG/GIF over CDN-converted formats when the server offers a choice.
 const ACCEPT = 'image/png,image/jpeg,image/gif,image/*;q=0.9,*/*;q=0.8';

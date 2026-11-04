@@ -25,10 +25,22 @@
     <label class="row">
       <span class="text">
         <span class="name">Save button on hover</span>
-        <span class="hint">Click the ↓ in the corner of an image, GIF or video</span>
+        <span class="hint">Click the ↓ next to an image, GIF or video</span>
       </span>
       <input type="checkbox" class="switch" id="hoverButton">
     </label>
+    <div class="row" id="positionRow">
+      <label class="text" for="buttonPosition">
+        <span class="name">Button position</span>
+      </label>
+      <select id="buttonPosition">
+        <option value="outside">Just outside the image</option>
+        <option value="top-left">Top-left corner</option>
+        <option value="top-right">Top-right corner</option>
+        <option value="bottom-left">Bottom-left corner</option>
+        <option value="bottom-right">Bottom-right corner</option>
+      </select>
+    </div>
     <label class="row">
       <span class="text">
         <span class="name"><kbd>Alt</kbd> + click</span>
