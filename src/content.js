@@ -62,7 +62,8 @@
     busy: '<svg class="i i-busy" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-opacity=".3" stroke-width="2.4"/><path d="M20 12a8 8 0 0 0-8-8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
     done: '<svg class="i i-done" viewBox="0 0 24 24" aria-hidden="true"><path d="m5.5 12.5 4 4 9-9.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     error: '<svg class="i i-error" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
-    info: '<svg class="i i-info" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 11v7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><circle cx="12" cy="6.5" r="1.7" fill="currentColor"/></svg>'
+    info: '<svg class="i i-info" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 11v7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><circle cx="12" cy="6.5" r="1.7" fill="currentColor"/></svg>',
+    camera: '<svg class="i i-camera" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 8.2c0-.9.7-1.6 1.6-1.6h2.2l1.4-2h4.6l1.4 2h2.2c.9 0 1.6.7 1.6 1.6v9.2c0 .9-.7 1.6-1.6 1.6H6.1c-.9 0-1.6-.7-1.6-1.6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12.6" r="3.3" fill="none" stroke="currentColor" stroke-width="2"/></svg>'
   };
 
   const host = document.createElement('qis-ui');
@@ -98,7 +99,8 @@
       .btn[data-state="done"] { background: #16a34a; }
       .btn[data-state="error"] { background: #dc2626; }
       .i { width: 18px; height: 18px; display: none; }
-      .btn[data-state="idle"] .i-save,
+      .btn[data-state="idle"]:not(.cam) .i-save,
+      .btn.cam[data-state="idle"] .i-camera,
       .btn[data-state="busy"] .i-busy,
       .btn[data-state="done"] .i-done,
       .btn[data-state="error"] .i-error { display: block; }
@@ -130,9 +132,13 @@
     <button class="btn" type="button" data-state="idle" title="Save full-size image  (or Alt + click)" aria-label="Save full-size image">
       ${ICONS.save}${ICONS.busy}${ICONS.done}${ICONS.error}
     </button>
+    <button class="btn cam" type="button" data-state="idle" title="Screenshot this story with the username  (or Alt + Shift + D)" aria-label="Screenshot this story">
+      ${ICONS.camera}${ICONS.busy}${ICONS.done}${ICONS.error}
+    </button>
     <div class="toast" role="status" aria-live="polite"><span class="dot"></span><span class="msg"></span></div>
   `;
-  const btn = shadow.querySelector('.btn');
+  const btn = shadow.querySelector('.btn:not(.cam)');
+  const camBtn = shadow.querySelector('.btn.cam');
   const toastEl = shadow.querySelector('.toast');
   const toastDot = shadow.querySelector('.dot');
   const toastMsg = shadow.querySelector('.msg');
@@ -396,7 +402,7 @@
     let left = atLeft ? visLeft + pad : visRight - BTN - pad;
     top = atTop ? Math.min(top, visBottom - BTN - pad) : Math.max(top, visTop + pad);
     left = atLeft ? Math.min(left, visRight - BTN - pad) : Math.max(left, visLeft + pad);
-    return { top, left, outside: false };
+    return { top, left, outside: false, where: corner };
   }
 
   // Default: just outside the picture so it never covers it. Above the top-right
@@ -406,12 +412,22 @@
     const above = r.top - GAP - BTN;
     if (above >= EDGE) {
       const left = Math.min(Math.max(r.right - BTN, EDGE), innerWidth - BTN - EDGE);
-      return { top: above, left, outside: true };
+      return { top: above, left, outside: true, where: 'above' };
     }
     const top = Math.min(Math.max(r.top, EDGE), Math.min(r.bottom, innerHeight) - BTN);
-    if (r.right + GAP + BTN <= innerWidth - EDGE) return { top, left: r.right + GAP, outside: true };
-    if (r.left - GAP - BTN >= EDGE) return { top, left: r.left - GAP - BTN, outside: true };
+    if (r.right + GAP + BTN <= innerWidth - EDGE) return { top, left: r.right + GAP, outside: true, where: 'right' };
+    if (r.left - GAP - BTN >= EDGE) return { top, left: r.left - GAP - BTN, outside: true, where: 'left' };
     return insideCorner(r, 'top-right');
+  }
+
+  // The story screenshot button sits right next to the save button:
+  // to its left when they're above the picture, otherwise below it (above it in a bottom corner).
+  function camSpot(spot) {
+    const step = BTN + 6;
+    if (spot.where === 'above') return { top: spot.top, left: Math.max(EDGE, spot.left - step) };
+    if (String(spot.where).startsWith('bottom')) return { top: spot.top - step, left: spot.left };
+    const below = spot.top + step;
+    return { top: below + BTN <= innerHeight - EDGE ? below : spot.top - step, left: spot.left };
   }
 
   function place() {
@@ -423,15 +439,25 @@
     placedOutside = spot.outside;
     btn.style.top = `${Math.round(spot.top)}px`;
     btn.style.left = `${Math.round(spot.left)}px`;
+    const story = isActiveStory(current);
+    camBtn.classList.toggle('show', story);
+    if (story) {
+      const c = camSpot(spot);
+      camBtn.style.top = `${Math.round(c.top)}px`;
+      camBtn.style.left = `${Math.round(c.left)}px`;
+    }
   }
 
   // While the pointer travels from the picture to a button sitting outside it,
   // it may cross the page or a neighbouring picture: keep the button where it is.
   function headingToButton(x, y) {
     if (!placedOutside || !current || !btn.classList.contains('show')) return false;
-    const b = btn.getBoundingClientRect();
     const m = GAP + 6;
-    return x >= b.left - m && x <= b.right + m && y >= b.top - m && y <= b.bottom + m;
+    const near = (el) => {
+      const b = el.getBoundingClientRect();
+      return x >= b.left - m && x <= b.right + m && y >= b.top - m && y <= b.bottom + m;
+    };
+    return near(btn) || (camBtn.classList.contains('show') && near(camBtn));
   }
 
   function show(found) {
@@ -456,6 +482,7 @@
       clearTimeout(hideTimer);
       hideTimer = 0;
       btn.classList.remove('show');
+      camBtn.classList.remove('show');
       current = null;
       return;
     }
@@ -463,6 +490,7 @@
     hideTimer = setTimeout(() => {
       hideTimer = 0;
       btn.classList.remove('show');
+      camBtn.classList.remove('show');
       current = null;
     }, 140);
   }
@@ -509,6 +537,13 @@
     e.preventDefault();
     e.stopPropagation();
     if (current) save(current);
+  });
+  on(camBtn, 'mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+  on(camBtn, 'pointerdown', (e) => e.stopPropagation());
+  on(camBtn, 'click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (current) storyShot(current.el);
   });
 
   // ---------- Alt + click ----------
@@ -661,6 +696,161 @@
     }
   }
 
+  // ---------- Instagram story screenshot ----------
+  // Saves exactly what's on screen inside the story frame: the picture or the
+  // current video frame plus Instagram's own header (profile picture,
+  // username, time) and anything drawn on top (text, stickers). Our own
+  // buttons and Instagram's "Reply to…" bar are hidden for the moment of the shot.
+  const onStoryPage = () => IG && /^\/stories\//.test(location.pathname);
+
+  // The big story in the middle (not the small previews of the next/previous ones).
+  function isActiveStory(found) {
+    if (!found || !onStoryPage() || found.kind === 'bg') return false;
+    return found.el.getBoundingClientRect().height >= innerHeight * 0.5;
+  }
+
+  function activeStoryMedia() {
+    let best = null;
+    let bestArea = 0;
+    for (const el of document.querySelectorAll('video, img')) {
+      const r = el.getBoundingClientRect();
+      const w = Math.min(r.right, innerWidth) - Math.max(r.left, 0);
+      const h = Math.min(r.bottom, innerHeight) - Math.max(r.top, 0);
+      if (w <= 0 || h < innerHeight * 0.5) continue;
+      const cs = getComputedStyle(el);
+      if (cs.visibility === 'hidden' || cs.display === 'none' || parseFloat(cs.opacity) < 0.05) continue;
+      if (w * h > bestArea) { best = el; bestArea = w * h; }
+    }
+    return best;
+  }
+
+  function storyPath() {
+    const m = location.pathname.match(/^\/stories\/([^/]+)\/(\d+)?/);
+    if (!m || m[1] === 'highlights') return { user: '', pk: '' };
+    return { user: m[1], pk: m[2] || '' };
+  }
+
+  // The frame to capture: the smallest box that holds both the picture and the
+  // poster's username link at its top.
+  function storyFrame(media) {
+    const mr = media.getBoundingClientRect();
+    const path = storyPath();
+    let header = null;
+    let user = path.user;
+    for (const a of document.querySelectorAll('a[href]')) {
+      let p;
+      try { p = new URL(a.href, location.href); } catch (e) { continue; }
+      if (!/(^|\.)instagram\.com$/i.test(p.hostname)) continue;
+      const m = p.pathname.match(/^\/([A-Za-z0-9._]{1,30})\/?$/);
+      if (!m || ['stories', 'explore', 'reels', 'direct', 'accounts'].includes(m[1])) continue;
+      if (path.user && m[1] !== path.user) continue;
+      const r = a.getBoundingClientRect();
+      if (!r.width || r.left < mr.left - 4 || r.right > mr.right + 4) continue;
+      if (r.top < mr.top - 140 || r.top > mr.top + mr.height * 0.25) continue;
+      header = a;
+      user = user || m[1];
+      break;
+    }
+    let el = media;
+    let rect = { left: mr.left, top: mr.top, right: mr.right, bottom: mr.bottom };
+    if (header) {
+      for (let a = media.parentElement; a && a !== document.body; a = a.parentElement) {
+        if (!a.contains(header)) continue;
+        const r = a.getBoundingClientRect();
+        if (r.width <= mr.width * 1.3) { el = a; rect = { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; }
+        break;
+      }
+      if (el === media) { // no tight frame found: stretch the picture's box up to include the username
+        const hr = header.getBoundingClientRect();
+        rect.top = Math.min(rect.top, hr.top - 12);
+      }
+    }
+    rect.left = Math.max(0, rect.left);
+    rect.top = Math.max(0, rect.top);
+    rect.right = Math.min(innerWidth, rect.right);
+    rect.bottom = Math.min(innerHeight, rect.bottom);
+    return { el, rect, user };
+  }
+
+  // Hide Instagram's "Reply to…" bar (and the like/share icons next to it) if it sits inside the frame.
+  function hideReplyBar(rect, hidden) {
+    const frameH = rect.bottom - rect.top;
+    for (const input of document.querySelectorAll('textarea, input[type="text"], [contenteditable="true"], [role="textbox"]')) {
+      const ir = input.getBoundingClientRect();
+      if (!ir.width || ir.bottom < rect.top || ir.top > rect.bottom || ir.right < rect.left || ir.left > rect.right) continue;
+      let row = input;
+      for (let a = input.parentElement; a && a !== document.body; a = a.parentElement) {
+        const r = a.getBoundingClientRect();
+        if (r.height > frameH * 0.25 || r.left < rect.left - 2 || r.right > rect.right + 2) break;
+        row = a;
+      }
+      if (hidden.some(([el]) => el === row)) continue;
+      // opacity hides the whole row; unlike visibility, nothing inside it can override that
+      hidden.push([row, ['opacity', 'transition'].map((k) => [k, row.style.getPropertyValue(k), row.style.getPropertyPriority(k)])]);
+      row.style.setProperty('transition', 'none', 'important');
+      row.style.setProperty('opacity', '0', 'important');
+    }
+  }
+
+  const twoFrames = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 30))));
+
+  function stamp() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  }
+
+  let shooting = false;
+  function setCamState(state) {
+    camBtn.dataset.state = state;
+    if (state === 'done' || state === 'error') setTimeout(() => { camBtn.dataset.state = 'idle'; }, 1400);
+  }
+
+  async function storyShot(media) {
+    if (shooting) return;
+    if (!alive()) { toast('Quick Image Saver was updated — <b>refresh this page</b> to keep saving.', true); return; }
+    if (!onStoryPage()) { toast('Open an Instagram story to take a story screenshot.', true); return; }
+    media = media || activeStoryMedia();
+    if (!media) { toast('Couldn’t find the story on screen — try again once it has loaded.', true); return; }
+    shooting = true;
+    const frame = storyFrame(media);
+    const path = storyPath();
+    const name = `${frame.user || 'instagram'}_story_${path.pk || stamp()}_screenshot`;
+    const hidden = [];
+    let res = null;
+    let error = '';
+    try {
+      hideReplyBar(frame.rect, hidden);
+      host.style.setProperty('display', 'none', 'important'); // our buttons + messages
+      await twoFrames(); // let the page repaint without them before the picture is taken
+      const r = frame.rect;
+      res = await chrome.runtime.sendMessage({
+        type: 'story-shot',
+        rect: { x: r.left, y: r.top, w: r.right - r.left, h: r.bottom - r.top },
+        viewport: { w: innerWidth, h: innerHeight },
+        name,
+        pageUrl: location.href
+      });
+    } catch (e) {
+      error = (e && e.message) || '';
+    } finally {
+      for (const [el, props] of hidden) {
+        for (const [k, value, priority] of props) {
+          if (value) el.style.setProperty(k, value, priority); else el.style.removeProperty(k);
+        }
+      }
+      host.style.setProperty('display', 'block', 'important');
+      shooting = false;
+    }
+    if (res && res.ok) {
+      if (camBtn.classList.contains('show')) setCamState('done');
+      toast(`Saved <b>${esc(res.filename)}</b>${res.size ? ` · ${esc(res.size)}` : ''}`);
+    } else {
+      if (camBtn.classList.contains('show')) setCamState('error');
+      toast(esc((res && res.error) || error || 'Couldn’t take the screenshot'), true);
+    }
+  }
+
   // ---------- "save all on page" (popup) ----------
   function collectAll() {
     const items = [];
@@ -685,6 +875,12 @@
     if (msg.type === 'collect-all') {
       if (window.top !== window) return false;
       sendResponse({ items: collectAll() });
+      return false;
+    }
+    if (msg.type === 'story-shot-request') {
+      if (window.top !== window) return false;
+      storyShot(null);
+      sendResponse({ handled: true });
       return false;
     }
     if (msg.type === 'save-hovered') {

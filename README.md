@@ -40,9 +40,24 @@ Version 1.3 gives the extension a fixed ID so the updater can find it, so it's i
 | **Hover button** | Move your mouse over any image, GIF or video, then click the ↓ button that appears just outside it (above its top-right corner). Prefer it somewhere else? Popup → **Button position**: just outside, or any corner. |
 | **Alt + click** | Hold `Alt` and click any image, GIF or video. Works even when it's a link, and won't pause Instagram videos. |
 | **Keyboard** | Point at an image, GIF or video and press `Alt + Shift + S`. |
+| **Instagram story screenshot** | On a story, click the camera next to the save arrow, or press `Alt + Shift + D`. See below. |
 | **Whole page** | Click the toolbar icon, then **Save all images on this page** (skips icons and tiny images). |
 
 Files go to `Downloads\Saved Images` by default. You can change the folder name in the popup, or turn on **A folder for each website** to sort them automatically.
+
+## Instagram story screenshots
+
+On an Instagram story, a **camera** button appears next to the save arrow (or press `Alt + Shift + D`, no hovering needed). It saves a PNG of exactly what's in the story frame on your screen:
+
+- the picture, or the video frame showing at that moment
+- Instagram's header: profile picture, **username** of the poster, and how long ago it was posted
+- everything drawn on the story: text, stickers, mentions, polls
+
+Left out: the "Reply to…" bar at the bottom and Quick Image Saver's own buttons. Files are named like `chef_ama_story_3333…_screenshot.png`.
+
+The screenshot is as sharp as the story is on your screen: a bigger browser window gives a bigger picture. To catch a video at a particular moment, pause the story first (Instagram's pause button, or click and hold the story).
+
+To save the original photo or video without Instagram's header, use the save arrow as usual.
 
 ## Instagram videos
 

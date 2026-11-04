@@ -191,8 +191,35 @@ async function exactGif(url) {
   return { ok: true, url: blobUrl, size: blob.size };
 }
 
+// Cut the story frame out of a picture of the whole visible tab. The page
+// measured the frame in CSS pixels; the picture is in screen pixels, so scale.
+async function cropShot(msg) {
+  const img = await createImageBitmap(await (await fetch(msg.dataUrl)).blob());
+  const scale = img.width / Math.max(1, (msg.viewport && msg.viewport.w) || img.width);
+  const r = msg.rect;
+  const sx = Math.max(0, Math.round(r.x * scale));
+  const sy = Math.max(0, Math.round(r.y * scale));
+  const sw = Math.min(img.width - sx, Math.round(r.w * scale));
+  const sh = Math.min(img.height - sy, Math.round(r.h * scale));
+  if (sw < 10 || sh < 10) return { error: 'The story isn’t on screen' };
+  const canvas = document.createElement('canvas');
+  canvas.width = sw;
+  canvas.height = sh;
+  canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+  img.close();
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  if (!blob) return { error: 'Couldn’t make the picture' };
+  const url = URL.createObjectURL(blob);
+  setTimeout(() => URL.revokeObjectURL(url), BLOB_LIFETIME);
+  return { url, w: sw, h: sh };
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || msg.target !== 'qis-offscreen') return false;
+  if (msg.type === 'crop') {
+    cropShot(msg).then(sendResponse, (e) => sendResponse({ error: String((e && e.message) || e) }));
+    return true;
+  }
   if (msg.type === 'exact-gif') {
     exactGif(msg.url).then(sendResponse, () => sendResponse({ ok: false, network: true }));
     return true;

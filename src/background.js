@@ -321,6 +321,38 @@ async function handleSave(msg, sender) {
   }
 }
 
+// ---------- Instagram story screenshot ----------
+// The page has already hidden our buttons and Instagram's reply bar; take a
+// picture of the visible tab, cut out the story frame (offscreen page) and save it as PNG.
+async function handleStoryShot(msg, sender) {
+  const tab = sender.tab;
+  if (!tab || tab.windowId == null) return { ok: false, error: 'Couldn’t find this tab' };
+  const r = msg.rect || {};
+  if (!(r.w > 20 && r.h > 20)) return { ok: false, error: 'Couldn’t find the story on screen' };
+  saveJobs++;
+  try {
+    let shot;
+    try {
+      shot = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+    } catch (e) {
+      return { ok: false, error: 'Couldn’t take the screenshot — keep the story window in front and try again' };
+    }
+    await ensureOffscreen();
+    const cut = await chrome.runtime.sendMessage({ target: 'qis-offscreen', type: 'crop', dataUrl: shot, rect: r, viewport: msg.viewport });
+    if (!cut || !cut.url) return { ok: false, error: (cut && cut.error) || 'Couldn’t cut out the story' };
+    const settings = await getSettings();
+    const file = `${cleanSegment(msg.name || '', 120) || 'instagram_story_screenshot'}.png`;
+    const folder = folderFor(settings, msg.pageUrl || tab.url || '');
+    const id = await download(cut.url, folder ? `${folder}/${file}` : file, 'image');
+    pendingBlobs.set(id, cut.url);
+    bumpCount(1);
+    return { ok: true, filename: file, size: `${cut.w}×${cut.h}` };
+  } finally {
+    saveJobs--;
+    scheduleOffscreenClose();
+  }
+}
+
 async function handleSaveMany(msg) {
   const items = Array.isArray(msg.items) ? msg.items : [];
   const settings = await getSettings();
@@ -531,14 +563,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     handleSaveMany(msg).then(sendResponse, (e) => sendResponse({ ok: false, error: String(e) }));
     return true;
   }
+  if (msg.type === 'story-shot') {
+    handleStoryShot(msg, sender).then(sendResponse, (e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+    return true;
+  }
   return false;
 });
 
-// ---------- keyboard shortcut ----------
+// ---------- keyboard shortcuts ----------
 chrome.commands.onCommand.addListener(async (command, tab) => {
-  if (command !== 'save-hovered') return;
+  if (command !== 'save-hovered' && command !== 'screenshot-story') return;
   if (!tab) [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tab && tab.id != null) chrome.tabs.sendMessage(tab.id, { type: 'save-hovered' }).catch(() => {});
+  if (!tab || tab.id == null) return;
+  if (command === 'save-hovered') chrome.tabs.sendMessage(tab.id, { type: 'save-hovered' }).catch(() => {});
+  else chrome.tabs.sendMessage(tab.id, { type: 'story-shot-request' }, { frameId: 0 }).catch(() => {});
 });
 
 // ---------- install: defaults + start working in already-open tabs ----------

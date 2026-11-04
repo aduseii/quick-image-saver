@@ -57,21 +57,22 @@ function updatePerSiteHint() {
 }
 
 // ---------- shortcut ----------
+function showKeys(el, shortcut, fallback) {
+  el.textContent = '';
+  if (!shortcut) { el.textContent = fallback; return; }
+  shortcut.split('+').forEach((key, i) => {
+    if (i) el.append(' + ');
+    const k = document.createElement('kbd');
+    k.textContent = key.trim();
+    el.append(k);
+  });
+}
+
 async function loadShortcut() {
   const cmds = await chrome.commands.getAll();
-  const cmd = cmds.find((c) => c.name === 'save-hovered');
-  const el = $('shortcut');
-  el.textContent = '';
-  if (cmd && cmd.shortcut) {
-    cmd.shortcut.split('+').forEach((key, i) => {
-      if (i) el.append(' + ');
-      const k = document.createElement('kbd');
-      k.textContent = key.trim();
-      el.append(k);
-    });
-  } else {
-    el.textContent = 'Keyboard shortcut (not set)';
-  }
+  const find = (name) => (cmds.find((c) => c.name === name) || {}).shortcut;
+  showKeys($('shortcut'), find('save-hovered'), 'Keyboard shortcut (not set)');
+  showKeys($('storyShortcut'), find('screenshot-story'), 'a keyboard shortcut (set one with Change)');
 }
 $('changeShortcut').addEventListener('click', () => {
   chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
